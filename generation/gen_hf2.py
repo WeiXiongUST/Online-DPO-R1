@@ -79,7 +79,7 @@ class ScriptArguments:
         metadata={"help": "the number of generations per prompt"},
     )
     max_input_length: Optional[int] = field(
-        default=8192,
+        default=4096,
         metadata={"help": "the maximum length of the input tokens"},
     )
     max_new_tokens: Optional[int] = field(
@@ -142,12 +142,17 @@ configs = get_dataset_config_names(script_args.dataset_name_or_path)
 datasets = [load_dataset(script_args.dataset_name_or_path, config, split='train') for config in configs]
 ds = concatenate_datasets(datasets)
 
+def get_prompt(example):
+    messages = [
+                                {"role": "system", "content": "Please reason step by step, and put your final answer within \\boxed{}."},
+                                                    {"role": "user", "content": example['problem'] + f' Let\'s think step by step and output the final answer within \\boxed{{}}'}
+                                                                            ]
+    full_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    return {"prompt": full_prompt}
+
+
 ds = ds.map(
-    lambda x: {
-        "prompt": tokenizer.apply_chat_template(
-            [{"role":"user","content":x[script_args.dataset_key]}], 
-            tokenize=False, add_generation_prompt=True)
-    }
+    get_prompt
 )
 
 data_size = len(ds["prompt"])
@@ -167,7 +172,7 @@ completions = []
 used_prompts = []
 gathered_data = []
 for i, output in enumerate(outputs):
-    tmp_data = {"prompt": ds[i]['prompt'], "responses": [out.text for out in output.outputs], "gt":remove_boxed(last_boxed_only_string(ds[i]['solution']))}
+    tmp_data = {"prompt": ds[i]['prompt'], "responses": [out.text for out in output.outputs], "gt":ds[i]['reward_model']['ground_truth'] }
     gathered_data.append(tmp_data)
 
 
